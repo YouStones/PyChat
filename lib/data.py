@@ -6,11 +6,14 @@ def load_data(file_name):
 		if not data:
 			return None
 		else:
-			return json.loads(data)
+			return load(data)
 
-def write_data(file_name, data):
+def save_data(file_name, data):
 	with open(file_name, 'w') as file:
-		file.write(json.dumps(data))
+		file.write(dump(data))
+
+def fetch(data, *data_wanted):
+	return tuple([data[n] for n in data_wanted])
 
 def load(data):
 	return json.loads(data)

@@ -46,7 +46,7 @@ class Server():
 
 
 	def send_rooms_list(self, client):
-		self.send(client, 'r', '{}'.format(json.dumps([*self.rooms])))
+		self.send(client, 'r', json.dumps([*self.rooms]))
 
 
 
@@ -65,7 +65,10 @@ class Server():
 
 
 	def send(self, client, data_type, data):
-		client.conn.send('{}:{}'.format(data_type, data).encode('UTF-8'))
+		length = len('{}:{}'.format(data_type, data))
+		print(length)
+		length += len(str(length))+1
+		client.conn.send('{}:{}:{}'.format(data_type, length, data).encode('UTF-8'))
 
 
 
@@ -113,7 +116,7 @@ class Server():
 
 				print('Room found :', room)
 
-				if len(room.clients) == room.max_clients:
+				if int(len(room.clients)) == int(room.max_clients):
 					self.send(client, 'ejr', 'The room "{}" is full'.format(msg))
 					continue
 
@@ -123,7 +126,6 @@ class Server():
 				client.room.add_client(client)
 
 				print('Adding client to room...')
-				print('mince', msg)
 				self.send(client, 'jr', msg)
 
 				for other_client in client.room.clients:

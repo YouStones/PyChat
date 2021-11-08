@@ -8,7 +8,8 @@ import lib.data as d
 
 class Client():
 	def __init__(self):
-		data = d.load_data('client_data.json')
+		self.data = d.load_data('client_data.json')
+		self.load()
 		self.host, self.port = self.load(('host', 'port'))
 		self.pseudo = None
 
@@ -17,7 +18,7 @@ class Client():
 		self.set_room_name(None)
 
 
-
+	
 	def set_room_name(self, name):
 		self.room_name = name
 		if not name:
@@ -27,12 +28,17 @@ class Client():
 
 
 
-	def load(self, data_wanted):
-		data = d.load_data('client_data.json')
-		data_fetch = list()
-		for i in data_wanted:
-			data_fetch.append(data[i])
-		return data_fetch
+	def load(self):
+		if not self.data:
+			data = {'host':'127.0.0.1','port':'4145'}
+			d.write_data('client_data.json', data)
+
+		if len(sys.argv) == 3 and sys.argv[1] == '-h':
+			data['host'] = sys.argv[2]
+			if len(sys.argv) == 5 and sys.argv[3] == '-p':
+				data['port'] = sys.argv[4]
+
+		
 
 
 
@@ -48,7 +54,7 @@ class Client():
 		if not data:
 			return None
 		else:
-			return data.split(':', 1)
+			return data
 
 
 
@@ -65,23 +71,32 @@ class Client():
 				self.close()
 				break
 
-			print('data :', data)
 
-			data_type, msg = data
+			_, data_len, _ = data.split(':', 2)
+			while int(data_len) <= len(data):
+				data_type, _, data = data.split(':', 2)
+				if int(data_len) < len(data):
+					data = data[data_len:]
+					_, data_len, _ = data.split(':', 2)
+				self.data_handler(data_type, data)
+
+
+
+	def data_handler(self, data_type, data):
 
 			if data_type == 'm':
-				self.app.edit_output(msg)
+				self.app.edit_output(data)
 
 			elif data_type == 'cr':
 				print(data)
-				print('message from server :', msg)
-				self.join_room(msg)
+				print('message from server :', data)
+				self.join_room(data)
 
 			elif data_type == 'ecr':
-				self.app.edit_output(msg)
+				self.app.edit_output(data)
 
 			elif data_type == 'jr':
-				self.set_room_name(msg)
+				self.set_room_name(data)
 				self.app.clear(self.app.display)
 				self.app.msg_input.config(state='normal')
 				self.app.create_button.config(state='disabled')
@@ -89,15 +104,15 @@ class Client():
 				self.app.root.bind('<Return>', lambda event: self.send_message())
 
 			elif data_type == 'ejr':
-				self.app.edit_output(msg)
+				self.app.edit_output(data)
 
 			elif data_type == 'r':
-				if not d.load(msg):
+				if not d.load(data):
 					self.app.join_button.config(state='disabled')
 				else:
 					self.app.join_button.config(state='normal')
 					self.app.room_name_list.selection_set(0)
-				self.app.rooms_list.set(d.load(msg))
+				self.app.rooms_list.set(d.load(data))
 
 
 
@@ -148,14 +163,14 @@ class Client():
 	def check_room_list(self):
 		select_id = self.app.room_name_list.curselection()
 		print(select_id)
-		if not select_idcl:
+		if not select_id:
 			self.app.edit_output('No room is currently selected')
 			return
 		self.join_room(self.app.room_name_list.get(select_id))
 
 
 	def join_room(self, name):
-		print(name)
+		print(self.pseudo)
 		if not self.pseudo:
 			self.app.edit_output('Please choose a pseudo in "Setting" tab')
 			return
@@ -186,17 +201,6 @@ class Client():
 
 
 if __name__ == '__main__':
-
-	data = d.load_data('client_data.json')
-
-	if not data:
-		data = {'host':'127.0.0.1','port':'4145'}
-		d.write_data('client_data.json', data)
-
-	if len(sys.argv) == 2:
-		data['host'] = sys.argv[1]
-
-	d.write_data('client_data.json', data)
 
 
 	client = Client()
