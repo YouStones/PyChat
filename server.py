@@ -66,7 +66,6 @@ class Server():
 
 	def send(self, client, data_type, data):
 		length = len('{}:{}'.format(data_type, data))
-		print(length)
 		length += len(str(length))+1
 		client.conn.send('{}:{}:{}'.format(data_type, length, data).encode('UTF-8'))
 

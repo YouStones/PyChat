@@ -4,13 +4,13 @@ import sys
 import socket
 import lib.gui as gui
 import lib.data as d
+import argparse
 
 
 class Client():
 	def __init__(self):
-		self.data = d.load_data('client_data.json')
 		self.load()
-		self.host, self.port = self.load(('host', 'port'))
+		self.host, self.port = d.fetch(self.data, 'host', 'port')
 		self.pseudo = None
 
 		self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -29,17 +29,27 @@ class Client():
 
 
 	def load(self):
+		self.data = d.load('data.json')
 		if not self.data:
-			data = {'host':'127.0.0.1','port':'4145'}
-			d.write_data('client_data.json', data)
+			self.data = {'host':'127.0.0.1','port':'4145'}
+			d.save('data.json', self.data)
 
-		if len(sys.argv) == 3 and sys.argv[1] == '-h':
-			data['host'] = sys.argv[2]
-			if len(sys.argv) == 5 and sys.argv[3] == '-p':
-				data['port'] = sys.argv[4]
+		parser = argparse.ArgumentParser(description="A python client for chatting between Umons students")
+		parser.add_argument('-i', '--ip',
+							type=str,
+							nargs='?',
+							const=self.data['host'],
+							default=self.data['host'],
+							help="Set the host's ip for this session")
+		parser.add_argument('-p', '--port',
+							type=str,
+							nargs='?',
+							const=self.data['port'],
+							default=self.data['port'],
+							help="Set the host's port for this session")
+		args = parser.parse_args()
 
-		
-
+		self.data['host'], self.data['port'] = args.ip, args.port
 
 
 	def connect(self):
@@ -107,12 +117,12 @@ class Client():
 				self.app.edit_output(data)
 
 			elif data_type == 'r':
-				if not d.load(data):
+				if not d.json2dic(data):
 					self.app.join_button.config(state='disabled')
 				else:
 					self.app.join_button.config(state='normal')
 					self.app.room_name_list.selection_set(0)
-				self.app.rooms_list.set(d.load(data))
+				self.app.rooms_list.set(d.json2dic(data))
 
 
 
@@ -134,8 +144,10 @@ class Client():
 
 
 	def set_pseudo(self):
-		self.pseudo = self.app.pseudo_input.get()
-		self.send('p', self.pseudo)
+		default_data = d.load('data.json')
+		print(data)
+		default_data['pseudo'] = self.app.pseudo_input.get()
+		d.save('data.json', default_data)
 
 
 
@@ -143,8 +155,8 @@ class Client():
 		self.app.msg_input.config(state='disabled')
 		self.app.root.bind('<Escape>', lambda event: self.quit())
 		self.app.create_button.config(command=self.create_room)
-		self.app.join_button.config(command=lambda: self.check_room_list())
-		self.app.pseudo_button.config(command=lambda: self.set_pseudo())
+		self.app.join_button.config(command=self.check_room_list)
+		self.app.pseudo_button.config(command=self.set_pseudo)
 
 		vcmd1 = (self.app.root.register(self.set_pseudo))
 		self.app.pseudo_input.config(validatecommand=vcmd1)
