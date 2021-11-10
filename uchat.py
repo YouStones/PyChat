@@ -75,19 +75,19 @@ class Client():
 
 	def listening(self):
 		while True:
-			data = self.receive()
+			raw_data = self.receive()
 
-			if not data:
+			print('data in:', raw_data)
+
+			if not raw_data:
 				self.close()
 				break
 
-
-			_, data_len, _ = data.split(':', 2)
-			while int(data_len) <= len(data):
-				data_type, _, data = data.split(':', 2)
-				if int(data_len) < len(data):
-					data = data[data_len:]
-					_, data_len, _ = data.split(':', 2)
+			while raw_data:
+				data_len, raw_data = raw_data.split(':', 1)
+				data = raw_data[:int(data_len)-1]
+				raw_data = raw_data[int(data_len)-1:]
+				data_type, data = data.split(':', 1)
 				self.data_handler(data_type, data)
 
 
@@ -99,7 +99,6 @@ class Client():
 
 			elif data_type == 'cr':
 				print(data)
-				print('message from server :', data)
 				self.join_room(data)
 
 			elif data_type == 'ecr':
@@ -122,11 +121,15 @@ class Client():
 				else:
 					self.app.join_button.config(state='normal')
 					self.app.room_name_list.selection_set(0)
-				self.app.rooms_list.set(d.json2dic(data))
+
+				rooms = d.json2dic(data)
+				rooms_list = ['{0} [{1}/{2}]'.format(*i) for i in rooms]
+				self.app.rooms_list.set(rooms_list)
 
 
 
 	def send(self, data_type, data):
+		print('data out:', '{}:{}'.format(data_type, data))
 		self.socket.send('{}:{}'.format(data_type, data).encode('UTF-8'))
 
 
@@ -184,15 +187,13 @@ class Client():
 
 	def check_room_list(self):
 		select_id = self.app.room_name_list.curselection()
-		print(select_id)
 		if not select_id:
 			self.app.edit_output('No room is currently selected')
 			return
-		self.join_room(self.app.room_name_list.get(select_id))
+		self.join_room(self.app.room_name_list.get(select_id).rsplit(' [', 1)[0])
 
 
 	def join_room(self, name):
-		print(self.pseudo)
 		if not self.pseudo:
 			self.app.edit_output('Please choose a pseudo in "Setting" tab')
 			return

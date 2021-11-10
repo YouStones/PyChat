@@ -46,16 +46,13 @@ class Server():
 
 
 	def send_rooms_list(self, client):
-		room_data = [[room.name, len(room.clients), room.max_clients] for room in self.rooms]
+		room_data = [[room.name, len(room.clients), room.max_clients] for room in self.rooms.values()]
 		self.send(client, 'r', json.dumps(room_data))
 
 
 
 	def create_room(self, name, max_clients):
 		self.rooms[name] = Room(name, max_clients)
-		for client in self.clients:
-			self.send_rooms_list(client)
-
 
 
 	def delete_room(self, name):
@@ -66,23 +63,24 @@ class Server():
 
 
 	def send(self, client, data_type, data):
-		length = len('{}:{}'.format(data_type, data))
-		length += len(str(length))+1
-		client.conn.send('{}:{}:{}'.format(data_type, length, data).encode('UTF-8'))
+		length = len(':{}:{}'.format(data_type, data))
+		client.conn.send('{}:{}:{}'.format(length, data_type, data).encode('UTF-8'))
 
 
 
 	def listening(self, client):
 		self.send_rooms_list(client)
 		while True:
+			print('putain')
 			data = client.conn.recv(1024).decode('UTF-8')
+			print('de merde')
 
 			if not data:
 				break
 
 			data_type, msg = data.split(':', 1)
 
-			print(data)
+			print('data in:', data)
 
 			if data_type == 'm' and client.room:
 				for other_client in client.room.clients:
@@ -128,7 +126,11 @@ class Server():
 				print('Adding client to room...')
 				self.send(client, 'jr', msg)
 
+				for client in self.clients:
+					self.send_rooms_list(client)
+
 				for other_client in client.room.clients:
+					print(other_client.conn, client.conn)
 					if other_client.conn.getpeername() == client.conn.getpeername():
 						continue
 					self.send(other_client, 'm', '{} joined the room'.format(client.pseudo))
@@ -143,11 +145,21 @@ class Server():
 							continue
 						self.send(other_client, 'm', '{} left the room'.format(client.pseudo))
 					client.room.remove_client(client)
+					for client in self.clients:
+							self.send_rooms_list(client)
 				client.room = None
+				print('QUITTE BORDEL DE MERDE')
 
+			print('FIN HANDLER')
+
+		print('pas possible')
 		if client.room:
 			client.room.remove_client(client)
 			for other_client in client.room.clients:
+
+				for client in self.clients:
+					self.send_rooms_list(client)
+
 				if other_client.conn.getpeername() == client.conn.getpeername():
 					continue
 				self.send(other_client, 'm', '{} left the room'.format(client.pseudo))
