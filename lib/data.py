@@ -1,9 +1,14 @@
 import json
 
 def load(file_name):
-	with open(file_name, 'w+') as file:
-		data = file.read()
-		return None if not data else json.loads(data)
+	try:
+		with open(file_name, 'r+') as file:
+			data = file.read()
+		return json.loads(data)
+	except:
+		with open(file_name, 'x') as file:
+			pass
+		return None
 
 
 def json2dic(data):

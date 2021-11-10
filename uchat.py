@@ -144,11 +144,15 @@ class Client():
 
 
 	def set_pseudo(self):
+		self.pseudo = self.app.pseudo_input.get()
+		self.send('p', self.pseudo)
+
+
+	def save_pseudo(self):
 		default_data = d.load('data.json')
-		print(data)
 		default_data['pseudo'] = self.app.pseudo_input.get()
 		d.save('data.json', default_data)
-
+		self.set_pseudo()
 
 
 	def set_gui(self):
@@ -156,10 +160,16 @@ class Client():
 		self.app.root.bind('<Escape>', lambda event: self.quit())
 		self.app.create_button.config(command=self.create_room)
 		self.app.join_button.config(command=self.check_room_list)
-		self.app.pseudo_button.config(command=self.set_pseudo)
+		self.app.pseudo_button.config(command=self.save_pseudo)
 
 		vcmd1 = (self.app.root.register(self.set_pseudo))
 		self.app.pseudo_input.config(validatecommand=vcmd1)
+
+		default_pseudo = d.fetch(self.data, 'pseudo')
+		if default_pseudo:
+			self.app.pseudo.set(default_pseudo)
+			self.set_pseudo()
+
 
 
 

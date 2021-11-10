@@ -46,7 +46,8 @@ class Server():
 
 
 	def send_rooms_list(self, client):
-		self.send(client, 'r', json.dumps([*self.rooms]))
+		room_data = [[room.name, len(room.clients), room.max_clients] for room in self.rooms]
+		self.send(client, 'r', json.dumps(room_data))
 
 
 
