@@ -71,7 +71,7 @@ class Server():
 	def listening(self, client):
 		self.send_rooms_list(client)
 		while True:
-			print('putain')
+			print(threading.currentThread())
 			data = client.conn.recv(1024).decode('UTF-8')
 			print('de merde')
 
