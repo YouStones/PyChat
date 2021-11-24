@@ -1,173 +1,117 @@
-import threading
-import socket
+import asyncio
 import os
 import sys
 import json
 
-class Server():
-	def __init__(self, port):
-		self.port = port
-		self.clients_count = 0
-		self.rooms_count = 0
-		self.rooms = dict()
-		self.threads = list()
-		self.clients = list()
 
-		self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-		self.socket.bind(('', self.port))
+class Server(asyncio.Protocol):
+	clients = list()
+	rooms = dict()
+	rooms_count = 0
 
+	def __init__(self):
+		pass
 
+	def connection_made(self, transport):
+		self.client = Client(transport)
+		self.clients.append(self.client)
 
-	def listen(self):
-		self.socket.listen(5)
+	def data_received(self, data):
+		raw_data = data.decode()
+		data_type, data = raw_data.split(':', 1)
+		self.data_handler(data_type, data)
 
-		try:
-			while True:
-				client = Client(self.socket.accept(), self)
+	def data_handler(self, data_type, data):
+		if data_type == 'm':
+			self.send_message(data)
 
-				print('New connection from {}'.format(client.address[0]))
-				new_thread = threading.Thread(target=self.listening, args=(client,))
-				new_thread.start()
-				self.clients.append(client)
-				self.threads.append(new_thread)
-				
-		except KeyboardInterrupt:
-			print('\rServer shutting down !')
+		elif data_type == 'p':
+			self.set_pseudo(data)
 
-			for client in self.clients:
-				self.shutdown(client)
+		elif data_type == 'cr':
+			self.send(*self.create_room(data))
 
-			for thread in self.threads:
-				thread.join()
+		elif data_type == 'jr':
+			self.send(*self.join_room(data))
 
-			self.socket.close()
+		elif data_type == 'lr':
+			self.send(*self.leave_room())
 
-
-
-	def send_rooms_list(self, client):
-		room_data = [[room.name, len(room.clients), room.max_clients] for room in self.rooms.values()]
-		self.send(client, 'r', json.dumps(room_data))
+	def send(self, data_type, data, clients=None):
+		if not clients:
+			clients = (self.client,)
+		length = len(data_type) + len(data) + 2
+		for client in clients:
+			client.transport.write('{}:{}:{}'.format(length, data_type, data).encode('UTF-8'))
 
 
+	def send_message(self, data):
+		self.send('m', data, self.clients)
 
-	def create_room(self, name, max_clients):
+
+	def set_pseudo(self, data):
+		self.client.set_pseudo(data)
+
+
+	def create_room(self, data):
+		name, max_clients = data.split('/')
+
+		if not name or name.isspace():
+			name = 'room#{}'.format(self.rooms_count)
+			self.rooms_count += 1
+
+		elif name in self.rooms:
+			return 'ecr', 'The room name "{}" is already taken'.format(name)
+
 		self.rooms[name] = Room(name, max_clients)
 
-
-	def delete_room(self, name):
-		self.rooms.pop(name)
-		for client in self.clients:
-			self.send_rooms_list(client)
+		return ('cr', name)
 
 
+	def join_room(self, data):
+		if not data in self.rooms:
+			self.send('ejr', 'No room named "{}" has been found'.format(msg))
+			return
 
-	def send(self, client, data_type, data):
-		length = len(':{}:{}'.format(data_type, data))
-		client.conn.send('{}:{}:{}'.format(length, data_type, data).encode('UTF-8'))
+		room = self.rooms[data]
+		if room.clients_count == room.max_clients:
+			self.send('ejr', 'The room "{}" is full'.format(msg))
+			return
 
+		self.client.room = room
+		room.add(self.client)
+		self.send('m', '{} joined the room'.format(self.client.pseudo), [c for c in self.client.room.clients if c != self.client])
 
-
-	def listening(self, client):
-		self.send_rooms_list(client)
-		while True:
-			print(threading.currentThread())
-			data = client.conn.recv(1024).decode('UTF-8')
-			print('de merde')
-
-			if not data:
-				break
-
-			data_type, msg = data.split(':', 1)
-
-			print('data in:', data)
-
-			if data_type == 'm' and client.room:
-				for other_client in client.room.clients:
-					self.send(other_client, 'm', '{} >> {}'.format(client.pseudo, msg))
-
-			elif data_type == 'p':
-				client.pseudo = msg
-
-			elif data_type == 'cr':
-				name, max_clients = msg.split('/')
-				print('creating a new room :', name, max_clients)
-				if name == '':
-					name = 'room#{}'.format(self.rooms_count)
-					self.rooms_count += 1
-
-				elif name in self.rooms:
-					self.send(client, 'ecr', 'The room name "{}" is already taken'.format(name))
-					return
-
-				print('room name :', name)
-				self.send(client, 'cr', name)
-				self.create_room(name, max_clients)
-
-			elif data_type == 'jr':
-				print('Searching room...')
-				if not msg in self.rooms:
-					self.send(client, 'ejr', 'No room named "{}" has been found'.format(msg))
-					continue
-
-				room = self.rooms[msg]
-
-				print('Room found :', room)
-
-				if int(len(room.clients)) == int(room.max_clients):
-					self.send(client, 'ejr', 'The room "{}" is full'.format(msg))
-					continue
-
-				print('Room is not full :',len(room.clients),'/',room.max_clients)
-
-				client.room = room
-				client.room.add_client(client)
-
-				print('Adding client to room...')
-				self.send(client, 'jr', msg)
-
-				for client in self.clients:
-					self.send_rooms_list(client)
-
-				for other_client in client.room.clients:
-					print(other_client.conn, client.conn)
-					if other_client.conn.getpeername() == client.conn.getpeername():
-						continue
-					self.send(other_client, 'm', '{} joined the room'.format(client.pseudo))
+		return ('jr', data)
 
 
-			elif data_type == 'lr':
-				if len(client.room.clients) == 1:
-					self.delete_room(client.room.name)
-				else:
-					for other_client in client.room.clients:
-						if other_client.conn.getpeername() == client.conn.getpeername():
-							continue
-						self.send(other_client, 'm', '{} left the room'.format(client.pseudo))
-					client.room.remove_client(client)
-					for client in self.clients:
-							self.send_rooms_list(client)
-				client.room = None
-				print('QUITTE BORDEL DE MERDE')
+	def leave_room(self):
+		if not self.client.room:
+			return ('elr', "You're not currently in a room")
 
-			print('FIN HANDLER')
+		else:
+			self.send('m', '{} left the room'.format(self.client.pseudo), [c for c in self.clients if c != self.client])
+			self.client.room.remove_client(self.client)
 
-		print('pas possible')
-		if client.room:
-			client.room.remove_client(client)
-			for other_client in client.room.clients:
+		if self.client.room.clients_count == 1:
+			self.delete_room(self.client.room)
 
-				for client in self.clients:
-					self.send_rooms_list(client)
+		client.room = None
 
-				if other_client.conn.getpeername() == client.conn.getpeername():
-					continue
-				self.send(other_client, 'm', '{} left the room'.format(client.pseudo))
+	def delete_room(self, room):
+		self.rooms.remove(room.name)
+		self.send()
 
-		print('{}/{} is disconnected'.format(client.address[0], client.pseudo))
-		client.conn.close()
-		self.clients.remove(client)
+	def eof_received(self):
+		pass
 
+	def connection_lost(self, exc):
+		if exc: print('ERROR : ', exc)
+		print("Lost connection with client", self.client.pseudo)
+		self.clients.remove(self.client)
+		if self.client.room:
+			self.client.room.remove(self.client)
+		self.client.transport.close
 
 
 	def shutdown(self, client):
@@ -175,13 +119,19 @@ class Server():
 
 
 
-
 class Client():
-	def __init__(self, info, server):
-		self.conn, self.address = info
-		self.pseudo = 'Client#{}'.format(server.clients_count)
-		server.clients_count += 1
+	clients_count = 0
+	def __init__(self, transport):
+		self.transport = transport
+		self.pseudo = 'Client#{}'.format(self.clients_count)
+		self.clients_count += 1
 		self.room = None
+
+	def set_pseudo(self, pseudo):
+		self.pseudo = pseudo
+
+	def set_room(self, room):
+		self.room = room
 
 
 
@@ -190,18 +140,34 @@ class Room():
 		self.name = name
 		self.max_clients = max_clients
 		self.clients = list()
+		self.clients_count = 0
 
 
-	def add_client(self, client):
+	def add(self, client):
 		self.clients.append(client)
+		self.clients_count += 1
 
 
-	def remove_client(self, client):
+	def remove(self, client):
 		self.clients.remove(client)
+		self.clients_count -= 1
 
 
+async def main(host, port):
+
+	loop = asyncio.get_running_loop()
+
+	server = await loop.create_server(lambda: Server(), host, port)
+
+	async with server:
+		await server.serve_forever()
 
 
 if __name__ == '__main__':
-	server = Server(4145)
-	server.listen()
+
+	try:
+		asyncio.run(main('', 4145))
+	except KeyboardInterrupt:
+		print('\rserver shutdown')
+	except Exception as e:
+		print('ERROR :', e)

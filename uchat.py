@@ -1,149 +1,67 @@
-import threading
+import asyncio
 import os
 import sys
-import socket
 import lib.gui as gui
 import lib.data as d
 import argparse
 
-
-class Client():
-	def __init__(self):
-		self.load()
-		self.host, self.port = d.fetch(self.data, 'host', 'port')
+class Client(asyncio.Protocol):
+	def __init__(self, on_con_lost, app, data):
+		self.on_con_lost = on_con_lost
+		self.app = app
 		self.pseudo = None
-
-		self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.app = gui.App()
-		self.set_room_name(None)
+		self.room_name = None
+		self.data = data
 
 
-	
-	def set_room_name(self, name):
-		self.room_name = name
-		if not name:
-			self.app.room_name.set('Bienvenue dans Pychat !')
-		else:
-			self.app.room_name.set('[{}]'.format(name))
-
-
-
-	def load(self):
-		self.data = d.load('data.json')
-		if not self.data:
-			self.data = {'host':'127.0.0.1','port':'4145'}
-			d.save('data.json', self.data)
-
-		parser = argparse.ArgumentParser(description="A python client for chatting between Umons students")
-		parser.add_argument('-i', '--ip',
-							type=str,
-							nargs='?',
-							const=self.data['host'],
-							default=self.data['host'],
-							help="Set the host's ip for this session")
-		parser.add_argument('-p', '--port',
-							type=str,
-							nargs='?',
-							const=self.data['port'],
-							default=self.data['port'],
-							help="Set the host's port for this session")
-		args = parser.parse_args()
-
-		self.data['host'], self.data['port'] = args.ip, args.port
-
-
-	def connect(self):
-		self.socket.settimeout(2)
-		self.socket.connect((self.host, int(self.port)))
-		self.socket.settimeout(None)
-
-
-
-	def receive(self):
-		data = self.socket.recv(1024).decode('UTF-8')
-		if not data:
-			return None
-		else:
-			return data
-
-
-
-	def start_listening(self):
-		threading.Thread(target=self.listening).start()
-
-
-
-	def listening(self):
-		while True:
-			raw_data = self.receive()
-
-			print('data in:', raw_data)
-
-			if not raw_data:
-				self.close()
-				break
-
-			while raw_data:
-				data_len, raw_data = raw_data.split(':', 1)
-				data = raw_data[:int(data_len)-1]
-				raw_data = raw_data[int(data_len)-1:]
-				data_type, data = data.split(':', 1)
-				self.data_handler(data_type, data)
-
-
-
-	def data_handler(self, data_type, data):
-
-			if data_type == 'm':
-				self.app.edit_output(data)
-
-			elif data_type == 'cr':
-				print(data)
-				self.join_room(data)
-
-			elif data_type == 'ecr':
-				self.app.edit_output(data)
-
-			elif data_type == 'jr':
-				self.set_room_name(data)
-				self.app.clear(self.app.display)
-				self.app.msg_input.config(state='normal')
-				self.app.create_button.config(state='disabled')
-				self.app.root.bind('<Escape>', lambda event: self.leave_room())
-				self.app.root.bind('<Return>', lambda event: self.send_message())
-
-			elif data_type == 'ejr':
-				self.app.edit_output(data)
-
-			elif data_type == 'r':
-				if not d.json2dic(data):
-					self.app.join_button.config(state='disabled')
-				else:
-					self.app.join_button.config(state='normal')
-					self.app.room_name_list.selection_set(0)
-
-				rooms = d.json2dic(data)
-				rooms_list = ['{0} [{1}/{2}]'.format(*i) for i in rooms]
-				self.app.rooms_list.set(rooms_list)
-
+	def connection_made(self, transport):
+		self.transport = transport
+		self.init_gui()
 
 
 	def send(self, data_type, data):
-		print('data out:', '{}:{}'.format(data_type, data))
-		self.socket.send('{}:{}'.format(data_type, data).encode('UTF-8'))
+		self.transport.write('{}:{}'.format(data_type, data).encode('UTF-8'))
 
 
+	def data_received(self, data):
+		raw_data = data.decode()
 
-	def send_message(self):
+		while raw_data:
+			data_len, raw_data = raw_data.split(':', 1)
+			data = raw_data[:int(data_len)-1]
+			raw_data = raw_data[int(data_len)-1:]
+			data_type, data = data.split(':', 1)
+			self.data_handler(data_type, data)
 
-		msg = self.app.msg_input.get()
 
-		if not msg or msg.isspace():
-			return
+	def data_handler(self, data_type, data):
+		if data_type == 'm':
+			self.display(data)
 
-		self.app.clear(self.app.msg_input)
-		self.send('m', msg)
+		elif data_type == 'ep':
+			self.display(data)
 
+		elif data_type == 'cr':
+			self.join_room(data)
+
+		elif data_type == 'ecr':
+			self.display(data)
+
+		elif data_type == 'jr':
+			self.focus_on_room(data)
+
+		elif data_type == 'ejr':
+			self.display(data)
+
+		elif data_type == 'ur':
+			self.update_room(data)
+
+		else:
+			print('Unrecognized data received : {}:{}'.format(data_type, data))
+
+
+	def display(self, message):
+		self.app.display(message)
 
 
 	def set_pseudo(self):
@@ -151,46 +69,11 @@ class Client():
 		self.send('p', self.pseudo)
 
 
-	def save_pseudo(self):
-		default_data = d.load('data.json')
-		default_data['pseudo'] = self.app.pseudo_input.get()
-		d.save('data.json', default_data)
-		self.set_pseudo()
-
-
-	def set_gui(self):
-		self.app.msg_input.config(state='disabled')
-		self.app.root.bind('<Escape>', lambda event: self.quit())
-		self.app.create_button.config(command=self.create_room)
-		self.app.join_button.config(command=self.check_room_list)
-		self.app.pseudo_button.config(command=self.save_pseudo)
-
-		vcmd1 = (self.app.root.register(self.set_pseudo))
-		self.app.pseudo_input.config(validatecommand=vcmd1)
-
-		default_pseudo = d.fetch(self.data, 'pseudo')
-		if default_pseudo:
-			self.app.pseudo.set(default_pseudo)
-			self.set_pseudo()
-
-
-
-
 	def create_room(self):
 		if not self.pseudo:
 			self.app.edit_output('Please choose a pseudo in "Setting" tab')
 			return
-		name = self.app.create_room_name.get()
-		max_clients = self.app.max_clients.get()
-		self.send('cr', '{}/{}'.format(name, max_clients))
-
-
-	def check_room_list(self):
-		select_id = self.app.room_name_list.curselection()
-		if not select_id:
-			self.app.edit_output('No room is currently selected')
-			return
-		self.join_room(self.app.room_name_list.get(select_id).rsplit(' [', 1)[0])
+		self.send('cr', '{}/{}'.format(self.app.create_room_name.get(), self.app.max_clients.get()))
 
 
 	def join_room(self, name):
@@ -200,42 +83,123 @@ class Client():
 		self.send('jr', '{}'.format(name))
 
 
+	def update_room(self, data):
+		if not d.json2dic(data):
+			self.app.join_button.config(state='disabled')
+		else:
+			self.app.join_button.config(state='normal')
+			self.app.room_name_list.selection_set(0)
 
-	def leave_room(self):
-		self.send('lr', '{}'.format(self.room_name))
-		
-		self.set_room_name(None)
-		self.app.clear(self.app.display)
-		self.app.create_button.config(state='enabled')
+		rooms = d.json2dic(data)
+		rooms_list = ['{0} [{1}/{2}]'.format(*i) for i in rooms]
+		self.app.rooms_list.set(rooms_list)
+
+
+	def request_room(self):
+		self.send('ur', '')
+
+
+	def focus_on_room(self, name):
+		self.room_name = name
+		self.app.set_room_name(self.room_name)
+		self.app.msg_input.config(state='normal')
+		for i, item in enumerate(self.app.tab_parent.tabs()): 
+			self.app.tab_parent.tab(item, state='disabled')
+
+
+	def init_gui(self):
 		self.app.msg_input.config(state='disabled')
-		self.app.root.bind('<Escape>', lambda event: self.quit())
+		self.app.root.protocol("WM_DELETE_WINDOW", lambda: self.transport.close()) 
+		self.app.root.bind('<Escape>', lambda e: self.transport.close())
+		self.app.create_button.config(command=self.create_room)
+		self.app.join_button.config(command=self.check_rooms)
+		# self.app.pseudo_button.config(command=self.save_pseudo)
+
+		vcmd1 = (self.app.root.register(self.set_pseudo))
+		self.app.pseudo_input.config(validatecommand=vcmd1)
+
+		default_pseudo = d.fetch(self.data, 'pseudo')
+		if default_pseudo:
+			self.app.pseudo.set(default_pseudo)
+			self.set_pseudo()
+
+	def check_rooms(self):
+		select_id = self.app.room_name_list.curselection()
+		if not select_id:
+			self.app.display('No room is currently selected')
+			return
+		self.join_room(self.app.room_name_list.get(select_id).rsplit(' [', 1)[0])
 
 
-
-	def close(self):
-		self.socket.close()
-		self.app.root.after(10, self.app.root.destroy)
-
-
-
-	def quit(self):
-		self.socket.shutdown(socket.SHUT_RD)
+	def connection_lost(self, exc):
+		print('et ?')
+		print('The host closed the connection', exc)
+		self.on_con_lost.set_result(True)
 
 
+async def main():
+	loop = asyncio.get_running_loop()
 
-if __name__ == '__main__':
-
-
-	client = Client()
+	on_con_lost = loop.create_future()
+	app = gui.App()
 
 	try:
-		client.connect()
-	except:
-		print('No server has been found at : {}, {}'.format(client.host, client.port))
-		os._exit(1)
 
-	client.start_listening()
+		data = d.load('data.json')
+		if not data:
+			data = {'host':'127.0.0.1','port':'4145'}
+			d.save('data.json', data)
+		parser = argparse.ArgumentParser(description="A python client for chatting between Umons students")
+		parser.add_argument('-i', '--ip',
+							type=str,
+							nargs='?',
+							const=data['host'],
+							default=data['host'],
+							help="Set the host's ip for this session")
+		parser.add_argument('-p', '--port',
+							type=str,
+							nargs='?',
+							const=data['port'],
+							default=data['port'],
+							help="Set the host's port for this session")
+		args = parser.parse_args()
+		data['host'], data['port'] = args.ip, args.port
 
-	client.set_gui()
+		transport, protocol = await loop.create_connection(lambda: Client(on_con_lost, app, data), data['host'], data['port'])
 
-	client.app.root.mainloop()
+		async_tk = loop.create_task(updater(app.root, 1/120))
+
+		try:
+			await on_con_lost
+		finally:
+			print('con is lost')
+			if not transport.is_closing():
+				transport.close()
+			async_tk.cancel()
+			app.root.destroy()
+
+	except ConnectionRefusedError:
+		print("Can't connect to server {} on {}".format(data['host'], data['port']))
+
+async def updater(root, interval):
+	while True:
+		root.update()
+		await asyncio.sleep(interval)
+
+asyncio.run(main())
+	
+# 	def set_room_name(self, name):
+		# self.room_name = name
+		# if not name:
+		# 	self.app.room_name.set('Bienvenue dans Pychat !')
+		# else:
+		# 	self.app.room_name.set('[{}]'.format(name))
+
+
+
+# 	def save_pseudo(self):
+# 		default_data = d.load('data.json')
+# 		default_data['pseudo'] = self.app.pseudo_input.get()
+# 		d.save('data.json', default_data)
+# 		self.set_pseudo()
+

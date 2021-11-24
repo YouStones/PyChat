@@ -1,13 +1,14 @@
 import tkinter as tk
 import tkinter.ttk as ttk
 import re
+import asyncio
 
 font_families = ['Lucida Fax', 'Liberation Mono', 'Noto Sans CJK SC', 'Ubuntu Mono', 'Noto Mono']
 
 class App():
 	def __init__(self):
 		self.root = tk.Tk()
-		self.root.title("Pychat")
+		self.root.title("Uchat")
 		self.root.configure(background='white')
 		self.root.resizable(False, False)
 		self.s = ttk.Style()
@@ -135,6 +136,8 @@ class App():
 				validatecommand=vcmd2
 				)
 
+
+
 			self.create_button = ttk.Button(
 				self.create_tab,
 				style='TButton',
@@ -152,7 +155,7 @@ class App():
 				)
 
 			# Display
-			self.display = tk.Text(
+			self.message_display = tk.Text(
 				self.content,
 				borderwidth=0,
 				highlightthickness=0,
@@ -180,7 +183,7 @@ class App():
 				font=('Liberation Mono', 12)
 			)
 
-			self.display.config(state='disabled')
+			self.message_display.config(state='disabled')
 			# self.room_name_list.config(state='disabled')
 
 
@@ -208,7 +211,7 @@ class App():
 
 			# Content
 			self.room_name_display.grid(column=0, row=0, sticky='nswe', columnspan=2)
-			self.display.grid(column=0, row=1, sticky='nswe', columnspan=2)
+			self.message_display.grid(column=0, row=1, sticky='nswe', columnspan=2)
 			self.write_sign.grid(column=0, row=2, sticky='ws')
 			self.msg_input.grid(column=1, row=2, sticky='wse')
 
@@ -229,11 +232,18 @@ class App():
 			self.create_button.grid(column=0, row=1, sticky='s')
 
 
-	def edit_output(self, msg):
-		self.display.config(state='normal')
-		self.display.insert('end', msg+'\n')
-		self.display.see('end')
-		self.display.config(state='disabled')
+	def display(self, message):
+		self.message_display.config(state='normal')
+		self.message_display.insert('end', message+'\n')
+		self.message_display.see('end')
+		self.message_display.config(state='disabled')
+
+
+	def set_room_name(self, name):
+		if not name:
+			self.room_name.set('Bienvenue dans Uchat !')
+		else:
+			self.room_name.set('[{}]'.format(name))
 
 
 	def clear(self, widget):
@@ -243,6 +253,7 @@ class App():
 	def check_len(self, string_var, len_max, *args):
 		if len(string_var.get()) > len_max:
 			string_var.set(string_var.get()[:len_max])
+			
 
 	def check_value(self, value, min_value, max_value):
 		if value == '' or value.isspace() or not value.isdigit():
