@@ -37,7 +37,7 @@ class Server(asyncio.Protocol):
 		elif data_type == 'lr':
 			self.send(*self.leave_room())
 
-	def send(self, data_type, data, clients=None):
+	def send(self, data_type, data='', clients=None):
 		if not clients:
 			clients = (self.client,)
 		length = len(data_type) + len(data) + 2
@@ -91,12 +91,14 @@ class Server(asyncio.Protocol):
 
 		else:
 			self.send('m', '{} left the room'.format(self.client.pseudo), [c for c in self.clients if c != self.client])
-			self.client.room.remove_client(self.client)
+			self.client.room.remove(self.client)
 
 		if self.client.room.clients_count == 1:
 			self.delete_room(self.client.room)
 
-		client.room = None
+		self.client.room = None
+
+		return ('lr',)
 
 	def delete_room(self, room):
 		self.rooms.remove(room.name)

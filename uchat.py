@@ -19,7 +19,7 @@ class Client(asyncio.Protocol):
 		self.init_gui()
 
 
-	def send(self, data_type, data):
+	def send(self, data_type, data=''):
 		self.transport.write('{}:{}'.format(data_type, data).encode('UTF-8'))
 
 
@@ -99,12 +99,18 @@ class Client(asyncio.Protocol):
 		self.send('ur', '')
 
 
+	def leave_room(self):
+		self.send('lr')
+
+
 	def focus_on_room(self, name):
 		self.room_name = name
 		self.app.set_room_name(self.room_name)
 		self.app.msg_input.config(state='normal')
 		for i, item in enumerate(self.app.tab_parent.tabs()): 
 			self.app.tab_parent.tab(item, state='disabled')
+		self.app.root.bind('<Escape>', lambda e: self.leave_room())
+
 
 
 	def init_gui(self):
