@@ -2,19 +2,20 @@ import asyncio
 import os
 import sys
 import json
+import contextvars
 
+clients = contextvars.ContextVar('clients', default=list())
+clients_count = contextvars.ContextVar('clients_count', default=0)
+rooms = contextvars.ContextVar('rooms', default=dict())
+rooms_count = contextvars.ContextVar('rooms_count', default=0)
 
 class Server(asyncio.Protocol):
-	clients = list()
-	rooms = dict()
-	rooms_count = 0
-
 	def __init__(self):
 		pass
 
 	def connection_made(self, transport):
 		self.client = Client(transport)
-		self.clients.append(self.client)
+		clients.get().append(self.client)
 
 	def data_received(self, data):
 		raw_data = data.decode()
@@ -46,7 +47,7 @@ class Server(asyncio.Protocol):
 
 
 	def send_message(self, data):
-		self.send('m', data, self.clients)
+		self.send('m', data, self.client.room.clients)
 
 
 	def set_pseudo(self, data):
@@ -57,23 +58,24 @@ class Server(asyncio.Protocol):
 		name, max_clients = data.split('/')
 
 		if not name or name.isspace():
-			name = 'room#{}'.format(self.rooms_count)
-			self.rooms_count += 1
+			name = 'room#{}'.format(rooms_count.get())
+			rooms_count.set(rooms_count.get() + 1)
+			print(rooms_count.get())
 
-		elif name in self.rooms:
+		elif name in rooms.get():
 			return 'ecr', 'The room name "{}" is already taken'.format(name)
 
-		self.rooms[name] = Room(name, max_clients)
+		rooms.get()[name] = Room(name, max_clients)
 
 		return ('cr', name)
 
 
 	def join_room(self, data):
-		if not data in self.rooms:
+		if not data in rooms.get():
 			self.send('ejr', 'No room named "{}" has been found'.format(msg))
 			return
 
-		room = self.rooms[data]
+		room = rooms.get()[data]
 		if room.clients_count == room.max_clients:
 			self.send('ejr', 'The room "{}" is full'.format(msg))
 			return
@@ -90,7 +92,7 @@ class Server(asyncio.Protocol):
 			return ('elr', "You're not currently in a room")
 
 		else:
-			self.send('m', '{} left the room'.format(self.client.pseudo), [c for c in self.clients if c != self.client])
+			self.send('m', '{} left the room'.format(self.client.pseudo), [c for c in clients.get() if c != self.client])
 			self.client.room.remove(self.client)
 
 		if self.client.room.clients_count == 1:
@@ -101,7 +103,7 @@ class Server(asyncio.Protocol):
 		return ('lr',)
 
 	def delete_room(self, room):
-		self.rooms.remove(room.name)
+		rooms.get().remove(room.name)
 		self.send()
 
 	def eof_received(self):
@@ -110,7 +112,7 @@ class Server(asyncio.Protocol):
 	def connection_lost(self, exc):
 		if exc: print('ERROR : ', exc)
 		print("Lost connection with client", self.client.pseudo)
-		self.clients.remove(self.client)
+		clients.get().remove(self.client)
 		if self.client.room:
 			self.client.room.remove(self.client)
 		self.client.transport.close
@@ -122,11 +124,10 @@ class Server(asyncio.Protocol):
 
 
 class Client():
-	clients_count = 0
 	def __init__(self, transport):
 		self.transport = transport
-		self.pseudo = 'Client#{}'.format(self.clients_count)
-		self.clients_count += 1
+		self.pseudo = 'Client#{}'.format(clients_count.get())
+		clients_count.set(clients_count.get() + 1)
 		self.room = None
 
 	def set_pseudo(self, pseudo):

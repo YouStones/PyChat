@@ -56,6 +56,9 @@ class Client(asyncio.Protocol):
 		elif data_type == 'ur':
 			self.update_room(data)
 
+		elif data_type == 'lr':
+			self.unfocus_on_room()
+
 		else:
 			print('Unrecognized data received : {}:{}'.format(data_type, data))
 
@@ -67,6 +70,11 @@ class Client(asyncio.Protocol):
 	def set_pseudo(self):
 		self.pseudo = self.app.pseudo_input.get()
 		self.send('p', self.pseudo)
+
+
+	def send_message(self):
+		self.send('m', self.app.msg_input.get())
+		self.app.clear(self.app.msg_input)
 
 
 	def create_room(self):
@@ -110,7 +118,17 @@ class Client(asyncio.Protocol):
 		for i, item in enumerate(self.app.tab_parent.tabs()): 
 			self.app.tab_parent.tab(item, state='disabled')
 		self.app.root.bind('<Escape>', lambda e: self.leave_room())
+		self.app.root.bind('<Return>', lambda e: self.send_message())
 
+
+	def unfocus_on_room(self):
+		self.room_name = None
+		self.app.set_room_name('Bienvenue dans Uchat !')
+		self.app.msg_input.config(state='disabled')
+		for i, item in enumerate(self.app.tab_parent.tabs()): 
+			self.app.tab_parent.tab(item, state='normal')
+		self.app.root.bind('<Escape>', lambda e: self.transport.close())
+		self.app.root.bind('<Return>')
 
 
 	def init_gui(self):
